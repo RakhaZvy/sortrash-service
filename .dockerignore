@@ -1,0 +1,9 @@
+scripts/
+data/
+*.ipynb
+__pycache__/
+*.pyc
+.git/
+models/best_classifier_old.pt
+models/yolov8n-cls.pt
+classification_history.json

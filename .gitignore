@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
+.venv/
+data/
+classification_history.json
+
+# Large model files - track with Git LFS or keep local
+models/best_classifier_old.pt
+models/yolov8n-cls.pt
+models/inception_model.keras
+models/garbage_classification_model_inception.h5
