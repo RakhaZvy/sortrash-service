@@ -10,6 +10,7 @@ import json
 import os
 import base64
 
+from huggingface_hub import hf_hub_download
 from classifiers import inception_classifier
 
 app = Flask(__name__)
@@ -36,6 +37,34 @@ CLASS_NAME_MAP: dict[str, str] = {
 def normalize_class(name: str) -> str:
     return CLASS_NAME_MAP.get(name.lower(), name.capitalize())
 
+
+HF_REPO_ID = os.environ.get("HF_REPO_ID")
+HF_TOKEN = os.environ.get("HF_TOKEN")
+
+MODEL_FILES = ["best_detector.pt", "yolo_cls.pt", "inception_model.keras"]
+
+def download_models():
+    if not HF_REPO_ID:
+        print("HF_REPO_ID not set, skipping model download.")
+        return
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    for filename in MODEL_FILES:
+        dest = os.path.join(MODELS_DIR, filename)
+        if os.path.exists(dest):
+            continue
+        print(f"Downloading {filename} from Hugging Face...")
+        try:
+            path = hf_hub_download(
+                repo_id=HF_REPO_ID,
+                filename=filename,
+                token=HF_TOKEN,
+                local_dir=MODELS_DIR,
+            )
+            print(f"Downloaded {filename} to {path}")
+        except Exception as exc:
+            print(f"Could not download {filename}: {exc}")
+
+download_models()
 
 print("Loading models...")
 detector = YOLO(os.path.join(MODELS_DIR, "best_detector.pt"))
