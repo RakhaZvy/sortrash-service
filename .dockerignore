@@ -1,9 +1,14 @@
+models/
 scripts/
 data/
 *.ipynb
 __pycache__/
 *.pyc
+*.pyo
 .git/
-models/best_classifier_old.pt
-models/yolov8n-cls.pt
 classification_history.json
+.env
+venv/
+.venv/
+*.md
+.DS_Store
