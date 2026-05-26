@@ -5,5 +5,4 @@ opencv-python-headless
 numpy
 Pillow
 gunicorn
-tensorflow>=2.15
 huggingface_hub

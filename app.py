@@ -9,6 +9,7 @@ from datetime import datetime
 import json
 import os
 import base64
+import threading
 
 from huggingface_hub import hf_hub_download
 from classifiers import inception_classifier
@@ -69,29 +70,33 @@ def download_models():
             else:
                 print(f"ERROR: could not download {filename}: {exc}")
 
-download_models()
-
 detector = None
 classifier = None
 _startup_error = None
+_models_ready = False
+STATIC_MODEL = "yolo_cls"
 
-print("Loading models...")
-try:
-    detector = YOLO(os.path.join(MODELS_DIR, "best_detector.pt"))
-    classifier = YOLO(os.path.join(MODELS_DIR, "yolo_cls.pt"))
-    print("YOLO models loaded.")
-except Exception as exc:
-    _startup_error = str(exc)
-    print(f"ERROR loading YOLO models: {exc}")
+def _load_models_background():
+    global detector, classifier, _startup_error, _models_ready, STATIC_MODEL
+    try:
+        download_models()
+        print("Loading YOLO models...")
+        detector = YOLO(os.path.join(MODELS_DIR, "best_detector.pt"))
+        classifier = YOLO(os.path.join(MODELS_DIR, "yolo_cls.pt"))
+        print("YOLO models loaded.")
+        if inception_classifier.is_available():
+            print("Advanced classifier loaded.")
+            STATIC_MODEL = "inception"
+        else:
+            print("Using default classifier.")
+            STATIC_MODEL = "yolo_cls"
+        _models_ready = True
+        print("Ready.")
+    except Exception as exc:
+        _startup_error = str(exc)
+        print(f"ERROR loading models: {exc}")
 
-if inception_classifier.is_available():
-    print("Advanced classifier loaded.")
-    STATIC_MODEL = "inception"
-else:
-    print("Using default classifier.")
-    STATIC_MODEL = "yolo_cls"
-
-print("Ready." if not _startup_error else f"Started with errors: {_startup_error}")
+threading.Thread(target=_load_models_background, daemon=True).start()
 
 
 def load_history():
@@ -190,8 +195,9 @@ def health():
 
 @app.route("/classify", methods=["POST"])
 def classify():
-    if detector is None or classifier is None:
-        return jsonify({"error": f"Models not loaded: {_startup_error}"}), 503
+    if not _models_ready:
+        msg = f"Models failed to load: {_startup_error}" if _startup_error else "Models are still loading, try again in a moment."
+        return jsonify({"error": msg}), 503
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
     file = request.files["file"]
@@ -211,8 +217,9 @@ def classify():
 
 @app.route("/classify-frame", methods=["POST"])
 def classify_frame():
-    if detector is None or classifier is None:
-        return jsonify({"error": f"Models not loaded: {_startup_error}"}), 503
+    if not _models_ready:
+        msg = f"Models failed to load: {_startup_error}" if _startup_error else "Models are still loading, try again in a moment."
+        return jsonify({"error": msg}), 503
     try:
         data = request.get_json()
         if not data or "frame" not in data:
