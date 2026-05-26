@@ -41,34 +41,48 @@ def normalize_class(name: str) -> str:
 HF_REPO_ID = os.environ.get("HF_REPO_ID")
 HF_TOKEN = os.environ.get("HF_TOKEN")
 
-MODEL_FILES = ["best_detector.pt", "yolo_cls.pt", "inception_model.keras"]
+REQUIRED_MODELS = ["best_detector.pt", "yolo_cls.pt"]
+OPTIONAL_MODELS = ["inception_model.keras"]
 
 def download_models():
     if not HF_REPO_ID:
         print("HF_REPO_ID not set, skipping model download.")
         return
     os.makedirs(MODELS_DIR, exist_ok=True)
-    for filename in MODEL_FILES:
+    for filename in REQUIRED_MODELS + OPTIONAL_MODELS:
         dest = os.path.join(MODELS_DIR, filename)
         if os.path.exists(dest):
+            print(f"{filename} already present, skipping download.")
             continue
-        print(f"Downloading {filename} from Hugging Face...")
+        print(f"Downloading {filename} from {HF_REPO_ID}...")
         try:
-            path = hf_hub_download(
+            hf_hub_download(
                 repo_id=HF_REPO_ID,
                 filename=filename,
-                token=HF_TOKEN,
+                token=HF_TOKEN or None,
                 local_dir=MODELS_DIR,
             )
-            print(f"Downloaded {filename} to {path}")
+            print(f"Downloaded {filename}.")
         except Exception as exc:
-            print(f"Could not download {filename}: {exc}")
+            if filename in OPTIONAL_MODELS:
+                print(f"{filename} not found in repo, skipping: {exc}")
+            else:
+                print(f"ERROR: could not download {filename}: {exc}")
 
 download_models()
 
+detector = None
+classifier = None
+_startup_error = None
+
 print("Loading models...")
-detector = YOLO(os.path.join(MODELS_DIR, "best_detector.pt"))
-classifier = YOLO(os.path.join(MODELS_DIR, "yolo_cls.pt"))
+try:
+    detector = YOLO(os.path.join(MODELS_DIR, "best_detector.pt"))
+    classifier = YOLO(os.path.join(MODELS_DIR, "yolo_cls.pt"))
+    print("YOLO models loaded.")
+except Exception as exc:
+    _startup_error = str(exc)
+    print(f"ERROR loading YOLO models: {exc}")
 
 if inception_classifier.is_available():
     print("Advanced classifier loaded.")
@@ -77,7 +91,7 @@ else:
     print("Using default classifier.")
     STATIC_MODEL = "yolo_cls"
 
-print("Ready.")
+print("Ready." if not _startup_error else f"Started with errors: {_startup_error}")
 
 
 def load_history():
@@ -169,11 +183,15 @@ def run_pipeline(img_bgr: np.ndarray, use_inception: bool = False) -> list[dict]
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok"}), 200
+    if _startup_error:
+        return jsonify({"status": "degraded", "error": _startup_error}), 200
+    return jsonify({"status": "ok", "models_loaded": detector is not None}), 200
 
 
 @app.route("/classify", methods=["POST"])
 def classify():
+    if detector is None or classifier is None:
+        return jsonify({"error": f"Models not loaded: {_startup_error}"}), 503
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
     file = request.files["file"]
@@ -193,6 +211,8 @@ def classify():
 
 @app.route("/classify-frame", methods=["POST"])
 def classify_frame():
+    if detector is None or classifier is None:
+        return jsonify({"error": f"Models not loaded: {_startup_error}"}), 503
     try:
         data = request.get_json()
         if not data or "frame" not in data:
