@@ -138,6 +138,11 @@ def run_pipeline(img_bgr: np.ndarray, use_inception: bool = False) -> list[dict]
     return detections
 
 
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"}), 200
+
+
 @app.route("/classify", methods=["POST"])
 def classify():
     if "file" not in request.files:
